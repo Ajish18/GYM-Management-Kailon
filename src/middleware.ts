@@ -55,7 +55,27 @@ function isPublicPath(pathname: string): boolean {
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
-  const token = await getToken({ req, secret: process.env.AUTH_SECRET });
+  // `getToken` defaults `secureCookie` to `false` and then looks for the
+  // *non-secure* cookie name ("authjs.session-token") — but over HTTPS
+  // Auth.js issues "__Secure-authjs.session-token" and derives the JWE
+  // decryption salt from that name. On Vercel production that mismatch made
+  // Edge see no session for anyone, so every role page bounced to /login.
+  // Pin secureCookie to the actual request protocol so the cookie name and
+  // salt match what the auth instance issued.
+  let token: Awaited<ReturnType<typeof getToken>> = null;
+  try {
+    token = await getToken({
+      req,
+      secret: process.env.AUTH_SECRET,
+      secureCookie: req.nextUrl.protocol === "https:",
+    });
+  } catch {
+    // Edge couldn't decrypt the session (e.g. AUTH_SECRET not surfaced to the
+    // Edge runtime). Routing decisions here are only a UX optimization — the
+    // authoritative check runs in Node layouts via auth(). Pass through and
+    // let those decide instead of mis-redirecting every request to /login.
+    return NextResponse.next();
+  }
   const role = (token?.role as UserRole | undefined) ?? undefined;
 
   if (isPublicPath(pathname)) {

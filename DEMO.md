@@ -1,108 +1,124 @@
-# Kailon — How People Use It (Demo Plan)
+# Kailon — Client Demo Runbook
 
-## The five-minute story
+**Live app:** https://gym-kailon.vercel.app
+**Demo gym:** Iron Peak Fitness — a fully populated example gym (15 members,
+payments, 30 days of attendance, streaks, workouts, diet, messages,
+notifications) seeded into the live database so every screen is alive.
 
-1. **Gym owner signs up** at `/register` — name, gym name, email, password. Kailon
-   instantly generates a unique **Gym ID** (e.g. `K7F3XQ`) and shows it once,
-   clearly, with a copy button. This code is the gym's front door for
-   everyone else.
-2. **Owner shares the Gym ID** with their staff and members — printed on a
-   poster at the front desk, sent in a WhatsApp group, whatever. It's not a
-   secret like a password; it's just "which gym."
-3. **Staff and members join themselves** at `/join`: type the Gym ID → pick
-   "Sign In" or "Create Account" → set a name/email/password (or use
-   Google). No IT department, no CSV imports, no owner manually typing in
-   every trainer.
-4. **Trainers need one click of approval** from the owner (Staff page) the
-   first time — members don't, since a member only ever sees their own
-   data, but a trainer can see assigned members' health notes and messages,
-   so that one gets a human check.
-5. **Owner can still hand-pick people instead**, via **Invite staff** on the
-   Staff page — same destination, curated path: they type the person's
-   email, Kailon emails a link, and that person is pre-approved (no
-   approval step, since the owner explicitly chose them).
+---
 
-Both onboarding paths (self-serve with Gym ID, or owner-curated invite)
-lead to the same account system — a person can always sign in with a
-password **or** Google, whichever they set up.
+## 1. Logging in (do this before the client arrives)
 
-## Role-by-role journey
+Open https://gym-kailon.vercel.app/login and sign in. Every role uses the
+**same login form**: Gym ID + email + password.
 
-### Gym Owner
-- Signs up → gets Gym ID → lands on `/owner` dashboard (today's check-ins,
-  revenue, pending dues, expiring memberships).
-- `/owner/staff` — invite specific people, or watch self-joined trainers
-  show up as "Awaiting approval" and approve/reject with one click.
-- `/owner/memberships` — define plans (Monthly/Quarterly/Yearly, price,
-  duration).
-- `/owner/members` — register a member at the desk (for people who show up
-  in person rather than self-signing-up), assign a plan, collect payment —
-  one action creates the membership + invoice + payment together.
-- `/owner/settings` — Gym ID (to re-share), gym-wide config (attendance
-  grace period, streak freezes, tax %, invoice numbering), and their own
-  password.
+| Field | Value |
+|-------|-------|
+| **Gym ID** | `IRONPEAK` |
+| **Password** (every account) | `Demo@123` |
 
-### Receptionist
-- Joins via the Gym ID (owner tells them the code) or an owner invite.
-- `/reception` — "Today" view: check-ins, dues, expiring memberships.
-- `/reception/members` — same registration + plan-assignment flow as the
-  owner, minus financial analytics and gym settings.
-- `/reception/settings` — Gym ID (to help people join) + their own password.
+| Role | Email |
+|------|-------|
+| Owner | `owner@ironpeak.fit` |
+| Reception | `reception@ironpeak.fit` |
+| Trainer | `trainer.vikram@ironpeak.fit` |
+| Member | `aarav.mehta@example.com` |
 
-### Trainer
-- Either self-joins with the Gym ID (waits for one approval click) or
-  accepts an owner invite (active immediately).
-- Signs in with password or Google from then on.
-- (Workout/diet/messaging modules are the next build phase — see below.)
+Extra accounts to demo specific scenarios:
+- **Member with overdue dues:** `pooja.joshi@example.com`
+- **Member expiring in 3 days:** `sneha.reddy@example.com`
+- **New member (onboarding):** `ishita.gupta@example.com`
 
-### Member
-- Self-joins with the Gym ID — active immediately, no waiting.
-- Signs in with password or Google.
-- Dashboard shows streak, membership status, and (soon) today's workout/diet.
+---
 
-## Suggested live-demo script (for a prospective client)
+## 2. The five-minute story (for the client)
 
-1. Open `/register` fresh, create "their" gym on the spot — watch the Gym
-   ID get generated live. This is the "wow, that was fast" moment.
-2. Show the owner dashboard, then jump to `/owner/memberships` and create a
-   plan in front of them (e.g. "Monthly — ₹1,500").
-3. Register a walk-in member via `/owner/members`, assign the plan you just
-   made, collect a cash payment — point out the invoice number that just
-   got generated.
-4. Open an incognito window, go to `/join`, type the Gym ID, and self-sign-up
-   as a Trainer — then flip back to the owner tab and approve them live.
-   This double-sided moment (owner + trainer, two windows) tends to land
-   well.
-5. Sign in as the member (password or their Google account) and show the
-   dashboard from their side.
+Tell the story of **"Iron Peak Fitness, Andheri West"** — a real gym whose
+owner swapped the spreadsheet + paper register + WhatsApp group for one app.
 
-## What's genuinely production-ready today
+### 🏢 Owner — "run the whole business from here"
+1. **Dashboard** (`/owner`) — today's check-ins, revenue collected, pending
+   dues, memberships expiring this week. Everything a gym owner checks
+   first thing in the morning.
+2. **Members** (`/owner/members`) — 15 members, searchable, with membership
+   status. Show the **Bulk Import** (CSV/XLSX) and **template download**.
+3. **Memberships & payments** (`/owner/memberships`) — Starter ₹1,499 /
+   Growth ₹2,499 / Pro ₹7,999 with GST invoices. Open a member's invoice and
+   show the **PDF download**.
+4. **Payments** (`/owner/payments`) — collected revenue, UPI/Cash/Card, and
+   **Pooja's overdue invoice** (₹2,948.82) flagged as a pending due.
+5. **Trainer Workload** (`/owner/trainer-workload`) — Vikram and Ananya's
+   member load vs capacity.
+6. **Reports** (`/owner/reports`) — revenue, attendance, member metrics with
+   **CSV/XLSX export**.
 
-- Multi-tenant data isolation (every query scoped server-side by `gymId`,
-  never trusted from the client).
-- Brute-force protection on login (account + IP rate limiting).
-- Session revocation that takes effect immediately (deactivate someone,
-  they're out on their very next request, not next login).
-- Password + Google as independent, coexisting auth methods per account.
-- Atomic financial writes (membership + invoice + payment can't half-fail).
-- Full audit trail on financial/membership actions.
+### 💳 Reception — "the front desk, supercharged"
+1. **Today** (`/reception`) — morning check-ins already rolling in, who's
+   due, whose membership is about to expire.
+2. **QR Check-in** (`/reception/qr`) — open a member's QR code from their
+   phone and scan it at the desk (Chrome/Edge; camera required).
 
-## What's still ahead (not built yet)
+### 🏋️ Trainer — "every client, every day"
+1. **My Members** (`/trainer`) — Vikram's assigned members with health notes.
+2. **Workout** (`/trainer/workout`) — the **Push • Pull • Legs** program, the
+   exercise library, and today's logged sessions (Deepak, Karan, Aarav).
+3. **Diet** — Lean Bulk (3,000 kcal) and Fat Loss (1,800 kcal) plans assigned
+   to members.
+4. **Messages** — live trainer↔member conversations (Aarav, Diya, Sameer).
 
-Attendance/check-in, workouts, diet plans, progress tracking, streaks
-(schema exists, no UI/logic yet), reports, in-app messaging, notifications.
-These are the remaining modules from `docs/04-feature-list.md` — the
-foundation (auth, tenancy, member/payment core loop) is what everything
-else gets built on top of. Recommend picking 1-2 of these next based on
-what matters most for your first client conversations — attendance/check-in
-is probably the highest-leverage next build since it's the daily-use loop
-that makes the product sticky.
+### 🙋 Member — "it's my gym, on my phone"
+1. **Dashboard** (`/member`) — streak ("30-day streak 🔥" for Deepak),
+   membership status, today's workout.
+2. **My QR** (`/member/qr`) — the code they scan at the front desk.
+3. **Workout / Diet / Progress** — logged sessions, PRs (Manish's 180 kg
+   squat), body-measurement charts trending down, water intake.
+4. **Payments** (`/member/payments`) — their invoices and receipts.
+5. **Chat** — messages with their trainer.
 
-## One security trade-off, made explicitly
+### 🔔 Notifications — "the nudge engine"
+Show the bell in the top-right on any role: payment confirmations, streak
+milestones, fee-due alerts, expiry reminders, workout reminders. This is the
+anti-churn loop.
 
-Trainer self-signup requires owner approval before first login; Member
-self-signup doesn't. This is because a Trainer account can see assigned
-members' health notes and messages (higher blast radius if someone
-mischievously signs up), while a Member account only ever sees their own
-data. If you'd rather trainers also be instant-active (trading a little
-security for zero friction), that's a one-line change — say the word.
+---
+
+## 3. Live "wow" moments (create in front of them)
+
+These are genuinely impressive because they happen instantly and write real
+data:
+
+1. **Create a plan** → `/owner/memberships` → New Plan → name it, price it,
+   save. It's on the member-assignment screen immediately.
+2. **Register a walk-in member** → `/owner/members` → Register → assign a
+   plan → collect payment → watch the **invoice number** generate (INV-00xx).
+3. **Bulk import** → `/owner/members` → Import → download the template, add 2
+   rows, upload, watch them validate + insert.
+4. **Forgot password** → log out, use "Forgot password?" on the login page —
+   watch the reset email flow (Resend sender).
+5. **Check someone in** → Reception → Today → search a member → Check in →
+   they appear at the top of today's list instantly.
+6. **Streak leaderboard** → Member attendance page — Deepak's 30-day streak.
+
+---
+
+## 4. If the client asks about billing / revenue
+
+- The product is a **B2B SaaS sold per gym** — one `Gym` record = one tenant =
+  one subscription (already modeled: `Gym.status` = TRIAL/ACTIVE/SUSPENDED).
+- **v0.7 (next):** Razorpay for INR (UPI/cards), auto monthly invoices, and
+  subscription gating by `Gym.status`.
+- **v0.8:** pricing tiers + self-serve upgrade, real platform MRR dashboard.
+- Full detail in `docs/BUSINESS_ASSESSMENT.md`.
+
+---
+
+## 5. Reset the demo data
+
+The demo gym is re-seedable. If anyone creates data during the demo and you
+want a clean slate, re-run:
+
+```bash
+npx tsx prisma/seed-demo.ts
+```
+
+It deletes and recreates only the `IRONPEAK` gym — nothing else is touched.
