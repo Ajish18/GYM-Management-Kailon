@@ -1,36 +1,57 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Kailon — Train • Track • Transform
 
-## Getting Started
+Kailon is a multi-tenant **gym management platform** — one app that replaces the
+spreadsheet, paper register, and WhatsApp group: memberships & payments,
+attendance & streaks, workout programming, diet & macros, progress tracking,
+reports, notifications, and staff tools. Five roles in one tenant:
 
-First, run the development server:
+| Role | Home |
+|------|------|
+| Platform super admin | `/admin` |
+| Gym owner | `/owner` |
+| Receptionist | `/reception` |
+| Trainer | `/trainer` |
+| Member | `/member` |
+
+## Stack
+
+- **Framework:** Next.js 15 (App Router) + React 19 + TypeScript
+- **Database:** Prisma ORM on Supabase PostgreSQL (transaction pooler for
+  serverless, direct connection locally)
+- **Auth:** NextAuth v5 — JWT sessions, Google + Credentials providers,
+  DB-backed revocable sessions, rate limiting
+- **UI:** Tailwind CSS v4 + shadcn/Base UI components
+- **Email:** Resend (transactional invites + password resets)
+
+## Development
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+cp .env.example .env        # fill in real values (see SETUP.md)
+npm install
+npm run db:generate
+npm run dev                 # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Quality gates (all green in CI / before deploy):
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+npm run typecheck           # tsc --noEmit
+npm test                    # Vitest unit suites
+npm run lint                # ESLint
+npm run build               # production build
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Deployment
 
-## Learn More
+Deploys to Vercel from git. The `vercel-build` script generates the Prisma
+client, applies migrations (`prisma migrate deploy`), then builds Next.js.
+Required environment variables and the Google OAuth callback URL are documented
+in [SETUP.md](SETUP.md). Product status and roadmap live in
+[docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md); a business/revenue assessment
+is in [docs/BUSINESS_ASSESSMENT.md](docs/BUSINESS_ASSESSMENT.md).
 
-To learn more about Next.js, take a look at the following resources:
+## Docs
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+The `docs/` folder contains the full product specification: feature list,
+functional & non-functional requirements, role/permission matrix, database
+design, API design, module design, and security design.

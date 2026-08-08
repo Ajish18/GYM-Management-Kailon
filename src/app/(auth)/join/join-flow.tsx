@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -193,7 +194,7 @@ function GoogleButton() {
       disabled={loading}
       onClick={() => {
         setLoading(true);
-        signIn("google", { callbackUrl: "/" });
+        signIn("google", { callbackUrl: "/role-redirect" });
       }}
     >
       {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <GoogleGlyph className="h-4 w-4" />}
@@ -217,7 +218,7 @@ function SignInForm({ gymCode }: { gymCode: string }) {
       toast.error(ERROR_MESSAGES[result.error] ?? "Couldn't sign you in. Please try again.");
       return;
     }
-    window.location.href = "/";
+    window.location.href = "/role-redirect";
   }
 
   return (
@@ -249,6 +250,14 @@ function SignInForm({ gymCode }: { gymCode: string }) {
             </FormItem>
           )}
         />
+        <div className="flex justify-end">
+          <Link
+            href="/forgot-password"
+            className="text-sm font-medium text-primary underline underline-offset-2"
+          >
+            Forgot password?
+          </Link>
+        </div>
         <Button type="submit" className="w-full" disabled={loading}>
           {loading && <Loader2 className="h-4 w-4 animate-spin" />}
           Sign In
@@ -288,7 +297,7 @@ function CreateAccountForm({ gymCode }: { gymCode: string }) {
       return;
     }
     toast.success("You're in.");
-    window.location.href = "/";
+    window.location.href = "/role-redirect";
   }
 
   if (pending) {

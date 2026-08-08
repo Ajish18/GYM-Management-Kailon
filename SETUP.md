@@ -80,8 +80,12 @@ password to manage for those two roles.
    - Name: `Kailon Web`.
    - Under **Authorized redirect URIs**, add:
      - `http://localhost:3000/api/auth/callback/google` (for local dev)
-     - `https://YOUR-PRODUCTION-DOMAIN/api/auth/callback/google` (add this
-       once you have a production URL — you can edit this later)
+     - `https://gym-kailon.vercel.app/api/auth/callback/google` (production —
+       this is the exact URL the deployed app redirects to after Google
+       sign-in; if Google says "redirect_uri_mismatch", this is the first
+       thing to check)
+     - If you later move to a custom domain, add
+       `https://YOUR-DOMAIN/api/auth/callback/google` here too.
    - Click **Create**.
 5. You'll get a **Client ID** and **Client secret** — send me both:
    `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`.
@@ -121,7 +125,33 @@ sessions. Don't reuse it across other projects, and don't share it.)
 
 ---
 
-## 5. What to send me
+## 5. Production deploy — Vercel env checklist
+
+When deploying to Vercel (the `gym-kailon` project), every variable below must
+be set in **Project → Settings → Environment Variables** (Production + Preview
+so both the live site and preview deploys work). Missing one = login, Google,
+or email silently broken in production even though everything works locally.
+
+| Variable | Value |
+|----------|-------|
+| `AUTH_SECRET` | the same long random string from section 4 — **must match exactly**; a mismatch silently breaks session decryption in the edge middleware |
+| `DATABASE_URL` | Supabase **transaction pooler** (port 6543, `?pgbouncer=true`) |
+| `DIRECT_URL` | Supabase **session/direct** connection (port 5432) |
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service_role key (server-only) |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | from section 2 |
+| `RESEND_API_KEY` / `EMAIL_FROM` | from section 3 |
+| `NEXT_PUBLIC_APP_URL` | `https://gym-kailon.vercel.app` — used to build invite/password-reset links |
+
+**Deployment mechanics:** the repo's `vercel-build` script runs
+`prisma generate && prisma migrate deploy && next build`, so the database
+schema is applied automatically on deploy. Region should be `sin1` (Mumbai)
+for fastest DB round-trips from Supabase ap-south-1.
+
+---
+
+## 6. What to send me
 
 Once you've done the above, the fastest way to hand this off is to paste
 the filled-in values (or just tell me which ones you've set) and I'll:

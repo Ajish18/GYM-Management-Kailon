@@ -136,14 +136,44 @@ export async function listWorkoutPlans(params: { gymId: string; trainerId?: stri
 // Member "Today's Workout" view
 // ─────────────────────────────────────────────────────────────────────────
 
-export async function getActivePlanForMember(memberId: string) {
+// The raw workout plan carries Prisma Decimals on nested fields
+// (WorkoutTemplateExercise.targetWeight, WorkoutLogSet.actualWeight) that
+// React refuses to serialize from Server to Client ("...Decimal objects are
+// not supported"). TodayWorkoutCard is a Client Component, so these queries
+// flatten every Decimal to a plain number before returning.
+export type ActivePlanForMember = Awaited<ReturnType<typeof fetchActivePlan>>;
+
+async function fetchActivePlan(memberId: string) {
   return db.workoutPlan.findFirst({
     where: { memberId, status: "ACTIVE" },
     include: { template: { include: templateInclude } },
     orderBy: { startDate: "desc" },
   });
 }
-export type ActivePlanForMember = Awaited<ReturnType<typeof getActivePlanForMember>>;
+
+function serializeTemplateExercise(
+  te: NonNullable<NonNullable<NonNullable<ActivePlanForMember>["template"]>["days"]>[number]["exercises"][number],
+) {
+  return { ...te, targetWeight: te.targetWeight != null ? Number(te.targetWeight) : null };
+}
+
+function serializeTemplateDay(
+  day: NonNullable<NonNullable<NonNullable<ActivePlanForMember>["template"]>["days"]>[number],
+) {
+  return { ...day, exercises: day.exercises.map(serializeTemplateExercise) };
+}
+
+function serializeActivePlan(plan: NonNullable<ActivePlanForMember>): NonNullable<ActivePlanForMember> {
+  if (plan.template) {
+    plan.template.days = plan.template.days.map(serializeTemplateDay) as typeof plan.template.days;
+  }
+  return plan;
+}
+
+export async function getActivePlanForMember(memberId: string) {
+  const plan = await fetchActivePlan(memberId);
+  return plan ? serializeActivePlan(plan) : null;
+}
 
 /**
  * Design decision — "which template day is today?"
@@ -174,13 +204,27 @@ export function getTodayDayIndex(startDate: Date, totalDays: number): number {
   return diffDays % totalDays;
 }
 
-export async function getTodayLogForPlan(planId: string, memberId: string, logDate: Date) {
+export type TodayLog = Awaited<ReturnType<typeof fetchTodayLog>>;
+
+async function fetchTodayLog(planId: string, memberId: string, logDate: Date) {
   return db.workoutLog.findFirst({
     where: { workoutPlanId: planId, memberId, logDate },
     include: { sets: true },
   });
 }
-export type TodayLog = Awaited<ReturnType<typeof getTodayLogForPlan>>;
+
+// TodayWorkoutCard is a Client Component and reads todayLog.sets[].actualWeight
+// (a Prisma Decimal) — flatten to plain numbers for the Server → Client hop.
+export async function getTodayLogForPlan(planId: string, memberId: string, logDate: Date) {
+  const log = await fetchTodayLog(planId, memberId, logDate);
+  if (log) {
+    log.sets = log.sets.map((s) => ({
+      ...s,
+      actualWeight: s.actualWeight != null ? Number(s.actualWeight) : null,
+    })) as typeof log.sets;
+  }
+  return log;
+}
 
 export async function getWorkoutHistory(memberId: string, gymId: string, limit = 20) {
   return db.workoutLog.findMany({

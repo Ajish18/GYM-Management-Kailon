@@ -81,19 +81,45 @@ export async function listDietPlans(params: {
   }));
 }
 
-export async function getDietPlanById(gymId: string, planId: string) {
+// DietPlanMeal macro fields (proteinG/carbsG/fatG) are Prisma Decimals.
+// Decimal objects can't be serialized across the Server → Client boundary
+// ("Only plain objects can be passed to Client Components... Decimal objects
+// are not supported"), so meal macros are flattened to plain numbers here.
+// The `meals` array is shared by server-rendered cards AND client-fetched
+// detail sheets — keeping the conversion in the data layer fixes both.
+type DietPlanResult = Awaited<ReturnType<typeof fetchDietPlan>>;
+
+function normalizeMealMacros(plan: DietPlanResult): DietPlanResult {
+  if (plan) {
+    plan.meals = plan.meals.map((m) => ({
+      ...m,
+      proteinG: m.proteinG != null ? Number(m.proteinG) : null,
+      carbsG: m.carbsG != null ? Number(m.carbsG) : null,
+      fatG: m.fatG != null ? Number(m.fatG) : null,
+    })) as NonNullable<DietPlanResult>["meals"];
+  }
+  return plan;
+}
+
+async function fetchDietPlan(gymId: string, planId: string) {
   return db.dietPlan.findFirst({
     where: { id: planId, gymId },
     include: { meals: { orderBy: { sortOrder: "asc" } }, template: { select: { name: true } } },
   });
 }
 
+export async function getDietPlanById(gymId: string, planId: string) {
+  const plan = await fetchDietPlan(gymId, planId);
+  return normalizeMealMacros(plan);
+}
+
 export async function getActiveDietPlanForMember(gymId: string, memberId: string) {
-  return db.dietPlan.findFirst({
+  const plan = await db.dietPlan.findFirst({
     where: { gymId, memberId, status: "ACTIVE" },
     orderBy: { startDate: "desc" },
     include: { meals: { orderBy: { sortOrder: "asc" } }, template: { select: { name: true } } },
   });
+  return normalizeMealMacros(plan);
 }
 
 export async function listDietNotesForPlan(dietPlanId: string) {

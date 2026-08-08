@@ -15,9 +15,7 @@ import {
 import { AssignMembershipDialog } from "@/components/memberships/assign-membership-dialog";
 import { AssignTrainerDialog } from "@/components/members/assign-trainer-dialog";
 import { deleteMemberAction } from "@/lib/actions/members.actions";
-import type { MemberListItem } from "@/lib/data/members";
-
-type Plan = { id: string; name: string; price: unknown; durationDays: number };
+import type { MemberListItem, ActivePlan } from "@/lib/data/members";
 
 export function MemberRowActions({
   member,
@@ -26,7 +24,7 @@ export function MemberRowActions({
   canDelete,
 }: {
   member: MemberListItem;
-  plans: Plan[];
+  plans: ActivePlan[];
   trainers: { id: string; name: string }[];
   canDelete: boolean;
 }) {

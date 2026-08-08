@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { getToken } from "next-auth/jwt";
 import type { UserRole } from "@prisma/client";
+import { getRoleHome } from "@/lib/auth/roles";
 
 // Rewritten on top of `getToken` (next-auth/jwt) instead of `NextAuth(authConfig)`
 // because bundling the full auth wrapper into the Edge runtime produced
@@ -14,14 +15,9 @@ import type { UserRole } from "@prisma/client";
 // claims already embedded in the JWT at sign-in. The authoritative check —
 // including immediate account deactivation / role change — runs server-side
 // in layouts/route handlers/server actions via auth() from config.ts.
-
-const ROLE_HOME: Record<UserRole, string> = {
-  PLATFORM_SUPER_ADMIN: "/admin",
-  GYM_OWNER: "/owner",
-  RECEPTIONIST: "/reception",
-  TRAINER: "/trainer",
-  MEMBER: "/member",
-};
+//
+// The role → home mapping lives in src/lib/auth/roles.ts (single source of
+// truth with the post-login redirect route at /role-redirect).
 
 const ROUTE_PREFIX_ROLES: Record<string, UserRole[]> = {
   "/admin": ["PLATFORM_SUPER_ADMIN"],
@@ -31,10 +27,27 @@ const ROUTE_PREFIX_ROLES: Record<string, UserRole[]> = {
   "/member": ["MEMBER"],
 };
 
-const PUBLIC_PATHS = ["/", "/login", "/register", "/invite", "/join"];
+const PUBLIC_PATHS = [
+  "/",
+  "/login",
+  "/register",
+  "/invite",
+  "/join",
+  "/role-redirect",
+  "/forgot-password",
+  "/reset-password",
+];
 // Authenticated users hitting these get bounced to their dashboard instead
 // of seeing a signed-out landing/auth page.
-const REDIRECT_IF_AUTHED = ["/", "/login", "/register", "/join"];
+const REDIRECT_IF_AUTHED = [
+  "/",
+  "/login",
+  "/register",
+  "/join",
+  "/role-redirect",
+  "/forgot-password",
+  "/reset-password",
+];
 
 function isPublicPath(pathname: string): boolean {
   return PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
@@ -47,7 +60,7 @@ export async function middleware(req: NextRequest) {
 
   if (isPublicPath(pathname)) {
     if (role && REDIRECT_IF_AUTHED.some((p) => pathname === p)) {
-      return NextResponse.redirect(new URL(ROLE_HOME[role], req.url));
+      return NextResponse.redirect(new URL(getRoleHome(role), req.url));
     }
     return NextResponse.next();
   }
@@ -62,7 +75,7 @@ export async function middleware(req: NextRequest) {
     (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
   );
   if (matchedPrefix && !ROUTE_PREFIX_ROLES[matchedPrefix]!.includes(role)) {
-    return NextResponse.redirect(new URL(ROLE_HOME[role], req.url));
+    return NextResponse.redirect(new URL(getRoleHome(role), req.url));
   }
 
   return NextResponse.next();

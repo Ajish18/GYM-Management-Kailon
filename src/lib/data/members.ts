@@ -95,10 +95,27 @@ export async function listTrainersForGym(gymId: string) {
   });
 }
 
-export async function listActivePlans(gymId: string) {
-  return db.membershipPlan.findMany({
+export type ActivePlan = {
+  id: string;
+  name: string;
+  price: number;
+  durationDays: number;
+};
+
+// Returns plain, serializable objects — NOT raw Prisma models. The raw
+// model carries a `Decimal` price object, which React throws on when it's
+// passed from a Server Component to a Client Component ("Only plain objects
+// can be passed to Client Components... Decimal objects are not supported").
+export async function listActivePlans(gymId: string): Promise<ActivePlan[]> {
+  const plans = await db.membershipPlan.findMany({
     where: { gymId, isActive: true },
     orderBy: { sortOrder: "asc" },
   });
+  return plans.map((p) => ({
+    id: p.id,
+    name: p.name,
+    price: p.price.toNumber(),
+    durationDays: p.durationDays,
+  }));
 }
 

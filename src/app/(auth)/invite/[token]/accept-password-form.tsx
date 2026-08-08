@@ -37,7 +37,7 @@ export function AcceptPasswordForm({ token }: { token: string }) {
       return;
     }
     toast.success("You're in.");
-    window.location.href = "/";
+    window.location.href = "/role-redirect";
   }
 
   return (

@@ -1,7 +1,10 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  // Kill the bottom-left "N" DevIndicator in `next dev` (buildActivity dot
+  // stays configurable; `false` removes the whole indicator).
+  devIndicators: false,
+  poweredByHeader: false,
 };
 
 export default nextConfig;

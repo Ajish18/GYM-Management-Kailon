@@ -79,3 +79,20 @@ export const selfSignupSchema = z
   })
   .refine(passwordsMatch, passwordsMatchIssue);
 export type SelfSignupInput = z.infer<typeof selfSignupSchema>;
+
+/** Forgot-password request — Gym ID + email together locate the account
+ *  (email alone isn't globally unique; it's unique per gym). */
+export const forgotPasswordSchema = z.object({
+  gymCode: gymCodeSchema,
+  email: z.string().trim().toLowerCase().email("Enter a valid email address"),
+});
+export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
+
+export const resetPasswordSchema = z
+  .object({
+    token: z.string().min(1, "Missing reset token"),
+    password: passwordSchema,
+    confirmPassword: z.string(),
+  })
+  .refine(passwordsMatch, passwordsMatchIssue);
+export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;

@@ -1,8 +1,8 @@
 # Kailon — Project Status
 
-**Last Updated:** 2026-08-07  
-**Version:** 0.5.0  
-**Environment:** Development
+**Last Updated:** 2026-08-08  
+**Version:** 0.6.0  
+**Environment:** Development → Production-ready (git + migration deploy pipeline)
 
 ---
 
@@ -143,9 +143,11 @@ All five pending modules shipped (Trainer Workload, Bulk Import, Branch Manageme
 ## Testing
 
 - **Runner:** Vitest (node environment, path alias `@`)
-- **Suites:** `src/lib/__tests__/{format,member-status,export}.test.ts`
+- **Suites:** `src/lib/__tests__/{format,member-status,export,roles,auth-validation}.test.ts`
 - **Scripts:** `npm test` (single run), `npm run test:watch`
-- **Coverage target:** lib/export, lib/format, lib/member-status — pure functions; DB-touching code exercised manually via QA scripts
+- **Coverage target:** pure functions (format, member-status, export) plus the auth flows that
+  actually broke in v0.6 — role→home routing (`roles`) and the login/forgot/reset schemas
+  (`auth-validation`). DB-touching code exercised manually via QA scripts.
 
 ---
 
@@ -163,6 +165,7 @@ All five pending modules shipped (Trainer Workload, Bulk Import, Branch Manageme
 
 | Date | Version | Changes |
 |------|---------|---------|
+| 2026-08-08 | 0.6.0 | Stability + auth UX: deterministic post-login role redirect (`/role-redirect`, shared `roles.ts`), forgot/reset-password flow (model + email template were pre-existing but unused), Google OAuth callbackUrl now lands on the role dashboard, DevIndicator removed, baseline migration + `vercel-build` for git deploys, perf pass (per-request memoization, `Promise.all` batching, bounded lists), new test suites (roles, auth-validation) → ~51 tests |
 | 2026-08-07 | 0.5.0 | Pending modules shipped: Trainer Workload, Bulk Import (CSV/XLSX), Branch Management, Admin Analytics, REST API v1 (8 route handlers, JSON guards, batched queries). QR check-in (member QR page + reception scanner). Invoice PDFs cached to Supabase. Reports export route completed + lint hygiene. Vitest test infra (26 tests). Build fixed: recharts lazy-load wrappers resolve the RSC `createContext` failure and cut first-load JS on reports/progress pages |
 | 2026-08-06 | 0.4.1 | Performance pass: fixed dev-mode 500 (NODE_ENV in Edge middleware), deduped `auth()` session query, batched dashboard stats, reports active-tab loading (23 → 5–8 queries), cached gym meta + notification bell, mobile viewport |
 | 2026-08-06 | 0.4.0 | UI review: loading/error boundaries on all role pages + global error/404, a11y aria-labels, member-table empty-state fix, reception dashboard birthdays |

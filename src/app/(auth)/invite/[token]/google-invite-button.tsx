@@ -21,7 +21,7 @@ export function GoogleInviteButton() {
         disabled={loading}
         onClick={() => {
           setLoading(true);
-          signIn("google", { callbackUrl: "/" });
+          signIn("google", { callbackUrl: "/role-redirect" });
         }}
       >
         {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <GoogleGlyph className="h-4 w-4" />}

@@ -39,8 +39,7 @@ import {
 } from "@/lib/validations/memberships";
 import { assignMembershipAction } from "@/lib/actions/memberships.actions";
 import { formatCurrency } from "@/lib/format";
-
-type Plan = { id: string; name: string; price: unknown; durationDays: number };
+import type { ActivePlan } from "@/lib/data/members";
 
 export function AssignMembershipDialog({
   open,
@@ -53,7 +52,7 @@ export function AssignMembershipDialog({
   onOpenChange: (open: boolean) => void;
   memberId: string;
   memberName: string;
-  plans: Plan[];
+  plans: ActivePlan[];
 }) {
   const [loading, setLoading] = useState(false);
   const router = useRouter();

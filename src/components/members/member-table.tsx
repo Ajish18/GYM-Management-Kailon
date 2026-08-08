@@ -9,10 +9,10 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { MemberStatusBadge } from "@/components/members/status-badge";
 import { MemberRowActions } from "@/components/members/member-row-actions";
-import type { MemberListItem } from "@/lib/data/members";
+import type { MemberListItem, ActivePlan } from "@/lib/data/members";
 import { formatDate } from "@/lib/format";
 
-type Plan = { id: string; name: string; price: unknown; durationDays: number };
+type Plan = ActivePlan;
 
 function initials(name: string) {
   return name.split(" ").map((p) => p[0]).slice(0, 2).join("").toUpperCase();

@@ -48,7 +48,10 @@ export function LoginForm() {
       toast.error(ERROR_MESSAGES[result.error] ?? "Couldn't sign you in. Please try again.");
       return;
     }
-    window.location.href = next ?? "/";
+    // Route through /role-redirect so the post-login target is validated
+    // server-side against the caller's role (deep-links from the middleware's
+    // ?next= are honored only when they belong to that role's area).
+    window.location.href = next ? `/role-redirect?next=${encodeURIComponent(next)}` : "/role-redirect";
   }
 
   return (
@@ -110,6 +113,14 @@ export function LoginForm() {
                 </FormItem>
               )}
             />
+            <div className="flex justify-end">
+              <Link
+                href="/forgot-password"
+                className="text-sm font-medium text-primary underline underline-offset-2"
+              >
+                Forgot password?
+              </Link>
+            </div>
             <Button type="submit" className="w-full" disabled={loading}>
               {loading && <Loader2 className="h-4 w-4 animate-spin" />}
               Sign in

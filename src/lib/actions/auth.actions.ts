@@ -10,12 +10,16 @@ import {
   acceptInvitePasswordSchema,
   selfSignupSchema,
   gymCodeSchema,
+  forgotPasswordSchema,
+  resetPasswordSchema,
   type RegisterGymInput,
   type InviteStaffInput,
   type AcceptInvitePasswordInput,
   type SelfSignupInput,
+  type ForgotPasswordInput,
+  type ResetPasswordInput,
 } from "@/lib/validations/auth";
-import { sendEmail, inviteEmailHtml } from "@/lib/email/send";
+import { sendEmail, inviteEmailHtml, passwordResetEmailHtml } from "@/lib/email/send";
 
 type ActionResult<T = undefined> =
   | { success: true; data: T }
@@ -328,5 +332,103 @@ export async function rejectTrainerAction(userId: string): Promise<ActionResult>
     where: { id: userId },
     data: { status: "INACTIVE", deletedAt: new Date() },
   });
+  return { success: true, data: undefined };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Forgot / reset password
+// ─────────────────────────────────────────────────────────────────────────
+
+const PASSWORD_RESET_TTL_MS = 60 * 60 * 1000; // 1 hour
+const PASSWORD_RESET_MAX_PER_WINDOW = 3;
+const PASSWORD_RESET_WINDOW_MS = 15 * 60 * 1000;
+
+/**
+ * Public — emails a one-time reset link if the Gym ID + email match a real
+ * account. Always returns success regardless of whether the account exists,
+ * so the endpoint can't be used to enumerate which emails have accounts.
+ * Light throttle: at most 3 outstanding reset tokens per user per 15 min.
+ */
+export async function requestPasswordResetAction(
+  input: ForgotPasswordInput,
+): Promise<ActionResult> {
+  const parsed = forgotPasswordSchema.safeParse(input);
+  if (!parsed.success) {
+    return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
+  }
+  const { gymCode, email } = parsed.data;
+
+  const gym = await db.gym.findUnique({ where: { gymCode } });
+  const user = gym
+    ? await db.user.findUnique({ where: { gymId_email: { gymId: gym.id, email } } })
+    : null;
+
+  // No such account → pretend it worked (no account enumeration).
+  if (!gym || !user || user.deletedAt) {
+    return { success: true, data: undefined };
+  }
+
+  const windowStart = new Date(Date.now() - PASSWORD_RESET_WINDOW_MS);
+  const recentTokens = await db.passwordReset.count({
+    where: { userId: user.id, usedAt: null, createdAt: { gte: windowStart } },
+  });
+  if (recentTokens >= PASSWORD_RESET_MAX_PER_WINDOW) {
+    return { success: true, data: undefined };
+  }
+
+  const { raw, hash } = generateSecureToken();
+  await db.passwordReset.create({
+    data: {
+      userId: user.id,
+      tokenHash: hash,
+      expiresAt: new Date(Date.now() + PASSWORD_RESET_TTL_MS),
+    },
+  });
+
+  const resetUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000"}/reset-password?token=${raw}`;
+  await sendEmail({
+    // The user was located by this email, so it's the delivery address even
+    // if the column is nullable on the model.
+    to: user.email ?? email,
+    subject: "Reset your Kailon password",
+    html: passwordResetEmailHtml({ resetUrl }),
+  });
+
+  return { success: true, data: undefined };
+}
+
+/**
+ * Public — consumes a one-time reset token, sets a new password, marks the
+ * token used, clears the account's recent failed-login lockout, and revokes
+ * every open session (the caller signs back in with the new password).
+ */
+export async function resetPasswordAction(input: ResetPasswordInput): Promise<ActionResult> {
+  const parsed = resetPasswordSchema.safeParse(input);
+  if (!parsed.success) {
+    return { success: false, error: parsed.error.issues[0]?.message ?? "Invalid input" };
+  }
+  const { token, password } = parsed.data;
+
+  const reset = await db.passwordReset.findUnique({ where: { tokenHash: hashToken(token) } });
+  if (!reset || reset.usedAt || reset.expiresAt < new Date()) {
+    return { success: false, error: "This reset link is invalid or has expired" };
+  }
+
+  const passwordHash = await hashPassword(password);
+
+  await db.$transaction(async (tx) => {
+    await tx.user.update({ where: { id: reset.userId }, data: { passwordHash } });
+    await tx.passwordReset.update({ where: { id: reset.id }, data: { usedAt: new Date() } });
+    // Clear the account's failed-attempt lockout so the user can sign in right away.
+    await tx.loginAttempt.deleteMany({
+      where: { userId: reset.userId, success: false, createdAt: { gte: reset.createdAt } },
+    });
+    // Revoke every open session — the new password supersedes them all.
+    await tx.userSession.updateMany({
+      where: { userId: reset.userId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+  });
+
   return { success: true, data: undefined };
 }
