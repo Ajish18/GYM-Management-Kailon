@@ -1,8 +1,8 @@
 # Kailon — Project Status
 
 **Last Updated:** 2026-08-08  
-**Version:** 0.6.0  
-**Environment:** Development → Production-ready (git + migration deploy pipeline)
+**Version:** 0.6.1  
+**Environment:** Production (git + migration deploy pipeline) — client demo-ready
 
 ---
 
@@ -165,6 +165,7 @@ All five pending modules shipped (Trainer Workload, Bulk Import, Branch Manageme
 
 | Date | Version | Changes |
 |------|---------|---------|
+| 2026-08-08 | 0.6.1 | **Client demo-ready.** Added `prisma/seed-demo.ts` (`npm run db:seed:demo`) — a fully populated demo gym **Iron Peak Fitness** (Gym ID `IRONPEAK`, pw `Demo@123`) on the live DB: 15 members, 2 trainers, receptionist, owner, membership plans, GST invoices/payments (incl. overdue, expiring, lapsed scenarios), ~30 days attendance + streaks, workout templates/logs/PRs, diet plans, body measurements, water, messages, notifications, expenses. Rewrote `DEMO.md` as a 5-minute client runbook. **Fixed a production-blocking bug:** Edge middleware `getToken` defaulted `secureCookie` to `false`, so it looked for the non-secure cookie name while Auth.js issued `__Secure-authjs.session-token` over HTTPS — every role page bounced to `/login`. Now pins `secureCookie` to the request protocol (with a pass-through fallback to the authoritative Node `auth()`). Verified in production: all 5 roles log in, land on their dashboards, and render seeded data |
 | 2026-08-08 | 0.6.0 | Stability + auth UX: deterministic post-login role redirect (`/role-redirect`, shared `roles.ts`), forgot/reset-password flow (model + email template were pre-existing but unused), Google OAuth callbackUrl now lands on the role dashboard, DevIndicator removed, baseline migration + `vercel-build` for git deploys, perf pass (per-request memoization, `Promise.all` batching, bounded lists), new test suites (roles, auth-validation) → ~51 tests |
 | 2026-08-07 | 0.5.0 | Pending modules shipped: Trainer Workload, Bulk Import (CSV/XLSX), Branch Management, Admin Analytics, REST API v1 (8 route handlers, JSON guards, batched queries). QR check-in (member QR page + reception scanner). Invoice PDFs cached to Supabase. Reports export route completed + lint hygiene. Vitest test infra (26 tests). Build fixed: recharts lazy-load wrappers resolve the RSC `createContext` failure and cut first-load JS on reports/progress pages |
 | 2026-08-06 | 0.4.1 | Performance pass: fixed dev-mode 500 (NODE_ENV in Edge middleware), deduped `auth()` session query, batched dashboard stats, reports active-tab loading (23 → 5–8 queries), cached gym meta + notification bell, mobile viewport |
