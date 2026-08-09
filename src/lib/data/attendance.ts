@@ -1,8 +1,17 @@
 import "server-only";
+import { unstable_cache } from "next/cache";
 import { db } from "@/lib/db";
 import { deriveMemberStatus, type DerivedMemberStatus } from "@/lib/member-status";
 
 const PAGE_SIZE = 30;
+
+// The reception/owner attendance screens are high-traffic and every visit
+// re-ran their 2–3 query renders against the remote DB. These get short
+// data-cache windows (10s) — short enough that live check-ins still show up
+// almost immediately (and attendance actions revalidatePath the pages on
+// every check-in/out anyway), while removing the round-trips from repeat
+// visits and sidebar navigation.
+const ATTENDANCE_REVALIDATE = 10; // seconds
 
 export type AttendanceRange = "day" | "week" | "month";
 
@@ -35,30 +44,34 @@ export type CheckinRosterItem = {
 /** Full member roster for the manual check-in panel's search-and-pick UI.
  *  Gym rosters at launch scale are small enough to fetch in one page — if
  *  that stops being true, swap this for a debounced server-action search. */
-export async function listCheckinRoster(gymId: string): Promise<CheckinRosterItem[]> {
-  const members = await db.user.findMany({
-    where: { gymId, role: "MEMBER", deletedAt: null },
-    select: { id: true, name: true, phone: true },
-    orderBy: { name: "asc" },
-  });
-  if (members.length === 0) return [];
+export const listCheckinRoster = unstable_cache(
+  async (gymId: string): Promise<CheckinRosterItem[]> => {
+    const members = await db.user.findMany({
+      where: { gymId, role: "MEMBER", deletedAt: null },
+      select: { id: true, name: true, phone: true },
+      orderBy: { name: "asc" },
+    });
+    if (members.length === 0) return [];
 
-  const memberships = await db.memberMembership.findMany({
-    where: { gymId, memberId: { in: members.map((m) => m.id) } },
-    orderBy: { endDate: "desc" },
-  });
-  const latestByMember = new Map<string, (typeof memberships)[number]>();
-  for (const m of memberships) {
-    if (!latestByMember.has(m.memberId)) latestByMember.set(m.memberId, m);
-  }
+    const memberships = await db.memberMembership.findMany({
+      where: { gymId, memberId: { in: members.map((m) => m.id) } },
+      orderBy: { endDate: "desc" },
+    });
+    const latestByMember = new Map<string, (typeof memberships)[number]>();
+    for (const m of memberships) {
+      if (!latestByMember.has(m.memberId)) latestByMember.set(m.memberId, m);
+    }
 
-  return members.map((m) => ({
-    id: m.id,
-    name: m.name,
-    phone: m.phone,
-    status: deriveMemberStatus(latestByMember.get(m.id) ?? null),
-  }));
-}
+    return members.map((m) => ({
+      id: m.id,
+      name: m.name,
+      phone: m.phone,
+      status: deriveMemberStatus(latestByMember.get(m.id) ?? null),
+    }));
+  },
+  ["attendance-roster"],
+  { revalidate: ATTENDANCE_REVALIDATE },
+);
 
 export type OpenSessionItem = {
   id: string;
@@ -68,27 +81,31 @@ export type OpenSessionItem = {
   checkInMethod: string;
 };
 
-export async function listOpenSessions(gymId: string): Promise<OpenSessionItem[]> {
-  const records = await db.attendanceRecord.findMany({
-    where: { gymId, checkOutAt: null },
-    orderBy: { checkInAt: "desc" },
-  });
-  if (records.length === 0) return [];
+export const listOpenSessions = unstable_cache(
+  async (gymId: string): Promise<OpenSessionItem[]> => {
+    const records = await db.attendanceRecord.findMany({
+      where: { gymId, checkOutAt: null },
+      orderBy: { checkInAt: "desc" },
+    });
+    if (records.length === 0) return [];
 
-  const members = await db.user.findMany({
-    where: { id: { in: [...new Set(records.map((r) => r.memberId))] } },
-    select: { id: true, name: true },
-  });
-  const nameById = new Map(members.map((m) => [m.id, m.name]));
+    const members = await db.user.findMany({
+      where: { id: { in: [...new Set(records.map((r) => r.memberId))] } },
+      select: { id: true, name: true },
+    });
+    const nameById = new Map(members.map((m) => [m.id, m.name]));
 
-  return records.map((r) => ({
-    id: r.id,
-    memberId: r.memberId,
-    memberName: nameById.get(r.memberId) ?? "Unknown member",
-    checkInAt: r.checkInAt,
-    checkInMethod: r.checkInMethod,
-  }));
-}
+    return records.map((r) => ({
+      id: r.id,
+      memberId: r.memberId,
+      memberName: nameById.get(r.memberId) ?? "Unknown member",
+      checkInAt: r.checkInAt,
+      checkInMethod: r.checkInMethod,
+    }));
+  },
+  ["attendance-open"],
+  { revalidate: ATTENDANCE_REVALIDATE },
+);
 
 export async function getOpenSessionForMember(gymId: string, memberId: string) {
   return db.attendanceRecord.findFirst({ where: { gymId, memberId, checkOutAt: null } });
@@ -114,50 +131,54 @@ export type AttendanceListItem = {
   sessionDurationMinutes: number | null;
 };
 
-export async function listAttendance(params: {
-  gymId: string;
-  start: Date;
-  end: Date;
-  memberId?: string;
-  page?: number;
-}): Promise<{ items: AttendanceListItem[]; total: number; page: number; totalPages: number }> {
-  const page = Math.max(1, params.page ?? 1);
-  const where = {
-    gymId: params.gymId,
-    checkInAt: { gte: params.start, lte: params.end },
-    ...(params.memberId ? { memberId: params.memberId } : {}),
-  };
+export const listAttendance = unstable_cache(
+  async (params: {
+    gymId: string;
+    start: Date;
+    end: Date;
+    memberId?: string;
+    page?: number;
+  }): Promise<{ items: AttendanceListItem[]; total: number; page: number; totalPages: number }> => {
+    const page = Math.max(1, params.page ?? 1);
+    const where = {
+      gymId: params.gymId,
+      checkInAt: { gte: params.start, lte: params.end },
+      ...(params.memberId ? { memberId: params.memberId } : {}),
+    };
 
-  const [rows, total] = await Promise.all([
-    db.attendanceRecord.findMany({
-      where,
-      orderBy: { checkInAt: "desc" },
-      skip: (page - 1) * PAGE_SIZE,
-      take: PAGE_SIZE,
-    }),
-    db.attendanceRecord.count({ where }),
-  ]);
+    const [rows, total] = await Promise.all([
+      db.attendanceRecord.findMany({
+        where,
+        orderBy: { checkInAt: "desc" },
+        skip: (page - 1) * PAGE_SIZE,
+        take: PAGE_SIZE,
+      }),
+      db.attendanceRecord.count({ where }),
+    ]);
 
-  const memberIds = [...new Set(rows.map((r) => r.memberId))];
-  const members = memberIds.length
-    ? await db.user.findMany({ where: { id: { in: memberIds } }, select: { id: true, name: true } })
-    : [];
-  const nameById = new Map(members.map((m) => [m.id, m.name]));
+    const memberIds = [...new Set(rows.map((r) => r.memberId))];
+    const members = memberIds.length
+      ? await db.user.findMany({ where: { id: { in: memberIds } }, select: { id: true, name: true } })
+      : [];
+    const nameById = new Map(members.map((m) => [m.id, m.name]));
 
-  const items: AttendanceListItem[] = rows.map((r) => ({
-    id: r.id,
-    memberId: r.memberId,
-    memberName: nameById.get(r.memberId) ?? "Unknown member",
-    checkInAt: r.checkInAt,
-    checkInMethod: r.checkInMethod,
-    checkOutAt: r.checkOutAt,
-    checkOutMethod: r.checkOutMethod,
-    autoCheckedOut: r.autoCheckedOut,
-    sessionDurationMinutes: r.sessionDurationMinutes,
-  }));
+    const items: AttendanceListItem[] = rows.map((r) => ({
+      id: r.id,
+      memberId: r.memberId,
+      memberName: nameById.get(r.memberId) ?? "Unknown member",
+      checkInAt: r.checkInAt,
+      checkInMethod: r.checkInMethod,
+      checkOutAt: r.checkOutAt,
+      checkOutMethod: r.checkOutMethod,
+      autoCheckedOut: r.autoCheckedOut,
+      sessionDurationMinutes: r.sessionDurationMinutes,
+    }));
 
-  return { items, total, page, totalPages: Math.max(1, Math.ceil(total / PAGE_SIZE)) };
-}
+    return { items, total, page, totalPages: Math.max(1, Math.ceil(total / PAGE_SIZE)) };
+  },
+  ["attendance-list"],
+  { revalidate: ATTENDANCE_REVALIDATE },
+);
 
 // ─────────────────────────────────────────────────────────────────────────
 // Attendance stats (daily/monthly rollup + percentage)
@@ -176,60 +197,64 @@ export type AttendanceStats = {
  *  and "Attendance Percentage" features. The denominator is members whose
  *  latest membership is currently active (`deriveMemberStatus`), the
  *  numerator is distinct members who checked in within `range`. */
-export async function getAttendanceStats(
-  gymId: string,
-  range: AttendanceRange,
-  reference: Date = new Date(),
-): Promise<AttendanceStats> {
-  const { start, end } = getRangeBounds(range, reference);
+export const getAttendanceStats = unstable_cache(
+  async (
+    gymId: string,
+    range: AttendanceRange,
+    reference: Date = new Date(),
+  ): Promise<AttendanceStats> => {
+    const { start, end } = getRangeBounds(range, reference);
 
-  const [members, records] = await Promise.all([
-    db.user.findMany({ where: { gymId, role: "MEMBER", deletedAt: null }, select: { id: true } }),
-    db.attendanceRecord.findMany({
-      where: { gymId, checkInAt: { gte: start, lte: end } },
-      select: { memberId: true, checkOutAt: true, sessionDurationMinutes: true },
-    }),
-  ]);
+    const [members, records] = await Promise.all([
+      db.user.findMany({ where: { gymId, role: "MEMBER", deletedAt: null }, select: { id: true } }),
+      db.attendanceRecord.findMany({
+        where: { gymId, checkInAt: { gte: start, lte: end } },
+        select: { memberId: true, checkOutAt: true, sessionDurationMinutes: true },
+      }),
+    ]);
 
-  if (members.length === 0) {
+    if (members.length === 0) {
+      return {
+        activeMembers: 0,
+        visitors: 0,
+        checkins: 0,
+        percentage: 0,
+        openSessions: 0,
+        avgSessionMinutes: null,
+      };
+    }
+
+    const memberships = await db.memberMembership.findMany({
+      where: { gymId, memberId: { in: members.map((m) => m.id) } },
+      orderBy: { endDate: "desc" },
+    });
+    const latestByMember = new Map<string, (typeof memberships)[number]>();
+    for (const m of memberships) {
+      if (!latestByMember.has(m.memberId)) latestByMember.set(m.memberId, m);
+    }
+
+    const activeMembers = members.filter(
+      (m) => deriveMemberStatus(latestByMember.get(m.id) ?? null) === "active",
+    ).length;
+
+    const visitors = new Set(records.map((r) => r.memberId)).size;
+    const closed = records.filter((r) => r.checkOutAt && r.sessionDurationMinutes != null);
+    const avgSessionMinutes = closed.length
+      ? Math.round(closed.reduce((sum, r) => sum + (r.sessionDurationMinutes ?? 0), 0) / closed.length)
+      : null;
+
     return {
-      activeMembers: 0,
-      visitors: 0,
-      checkins: 0,
-      percentage: 0,
-      openSessions: 0,
-      avgSessionMinutes: null,
+      activeMembers,
+      visitors,
+      checkins: records.length,
+      percentage: activeMembers > 0 ? Math.round((visitors / activeMembers) * 100) : 0,
+      openSessions: records.filter((r) => !r.checkOutAt).length,
+      avgSessionMinutes,
     };
-  }
-
-  const memberships = await db.memberMembership.findMany({
-    where: { gymId, memberId: { in: members.map((m) => m.id) } },
-    orderBy: { endDate: "desc" },
-  });
-  const latestByMember = new Map<string, (typeof memberships)[number]>();
-  for (const m of memberships) {
-    if (!latestByMember.has(m.memberId)) latestByMember.set(m.memberId, m);
-  }
-
-  const activeMembers = members.filter(
-    (m) => deriveMemberStatus(latestByMember.get(m.id) ?? null) === "active",
-  ).length;
-
-  const visitors = new Set(records.map((r) => r.memberId)).size;
-  const closed = records.filter((r) => r.checkOutAt && r.sessionDurationMinutes != null);
-  const avgSessionMinutes = closed.length
-    ? Math.round(closed.reduce((sum, r) => sum + (r.sessionDurationMinutes ?? 0), 0) / closed.length)
-    : null;
-
-  return {
-    activeMembers,
-    visitors,
-    checkins: records.length,
-    percentage: activeMembers > 0 ? Math.round((visitors / activeMembers) * 100) : 0,
-    openSessions: records.filter((r) => !r.checkOutAt).length,
-    avgSessionMinutes,
-  };
-}
+  },
+  ["attendance-stats"],
+  { revalidate: ATTENDANCE_REVALIDATE },
+);
 
 // ─────────────────────────────────────────────────────────────────────────
 // Member's own attendance history (calendar heatmap)

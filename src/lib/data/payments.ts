@@ -1,4 +1,5 @@
 import "server-only";
+import { unstable_cache } from "next/cache";
 import { db } from "@/lib/db";
 import type { InvoiceStatus } from "@prisma/client";
 
@@ -14,56 +15,64 @@ export type PaymentListItem = {
   status: string;
 };
 
-export async function listPayments(params: {
-  gymId: string;
-  memberId?: string;
-  page?: number;
-}): Promise<{ items: PaymentListItem[]; total: number; page: number; totalPages: number }> {
-  const page = Math.max(1, params.page ?? 1);
-  const where = {
-    gymId: params.gymId,
-    ...(params.memberId ? { memberId: params.memberId } : {}),
-  };
+// Payments change only when a payment action runs — and those already call
+// revalidatePath("/owner/payments" | "/reception/payments"), which clears the
+// cached entries. 15s caching turns every repeat visit / sidebar click into a
+// cache read instead of a 3-round-trip DB render.
+export const listPayments = unstable_cache(
+  async (params: {
+    gymId: string;
+    memberId?: string;
+    page?: number;
+  }): Promise<{ items: PaymentListItem[]; total: number; page: number; totalPages: number }> => {
+    const page = Math.max(1, params.page ?? 1);
+    const where = {
+      gymId: params.gymId,
+      ...(params.memberId ? { memberId: params.memberId } : {}),
+    };
 
-  const [rows, total] = await Promise.all([
-    db.payment.findMany({
-      where,
-      orderBy: { paidAt: "desc" },
-      skip: (page - 1) * PAGE_SIZE,
-      take: PAGE_SIZE,
-      include: {
-        invoice: {
-          select: {
-            invoiceNumber: true,
-            memberId: true,
-            status: true,
+    const [rows, total] = await Promise.all([
+      db.payment.findMany({
+        where,
+        orderBy: { paidAt: "desc" },
+        skip: (page - 1) * PAGE_SIZE,
+        take: PAGE_SIZE,
+        include: {
+          invoice: {
+            select: {
+              invoiceNumber: true,
+              memberId: true,
+              status: true,
+            },
           },
         },
-      },
-    }),
-    db.payment.count({ where }),
-  ]);
+      }),
+      db.payment.count({ where }),
+    ]);
 
-  // Get member names separately
-  const memberIds = [...new Set(rows.map((r) => r.memberId))];
-  const members = await db.user.findMany({
-    where: { id: { in: memberIds } },
-    select: { id: true, name: true },
-  });
-  const memberMap = new Map(members.map((m) => [m.id, m.name]));
+    // Get member names separately
+    const memberIds = [...new Set(rows.map((r) => r.memberId))];
+    const members = await db.user.findMany({
+      where: { id: { in: memberIds } },
+      select: { id: true, name: true },
+    });
+    const memberMap = new Map(members.map((m) => [m.id, m.name]));
 
-  const items: PaymentListItem[] = rows.map((row) => ({
-    id: row.id,
-    invoiceNumber: row.invoice.invoiceNumber,
-    memberName: memberMap.get(row.memberId) ?? "Unknown",
-    amount: Number(row.amount),
-    method: row.method,
-    paidAt: row.paidAt,
-    status: row.invoice.status,
-  }));
+    const items: PaymentListItem[] = rows.map((row) => ({
+      id: row.id,
+      invoiceNumber: row.invoice.invoiceNumber,
+      memberName: memberMap.get(row.memberId) ?? "Unknown",
+      amount: Number(row.amount),
+      method: row.method,
+      paidAt: row.paidAt,
+      status: row.invoice.status,
+    }));
 
-  return { items, total, page, totalPages: Math.max(1, Math.ceil(total / PAGE_SIZE)) };
-}
+    return { items, total, page, totalPages: Math.max(1, Math.ceil(total / PAGE_SIZE)) };
+  },
+  ["payments-list"],
+  { revalidate: 15 },
+);
 
 export type InvoiceListItem = {
   id: string;
@@ -76,61 +85,65 @@ export type InvoiceListItem = {
   paidAmount: number;
 };
 
-export async function listInvoices(params: {
-  gymId: string;
-  memberId?: string;
-  status?: string;
-  page?: number;
-}): Promise<{ items: InvoiceListItem[]; total: number; page: number; totalPages: number }> {
-  const page = Math.max(1, params.page ?? 1);
-  const where = {
-    gymId: params.gymId,
-    ...(params.memberId ? { memberId: params.memberId } : {}),
-    ...(params.status ? { status: params.status as InvoiceStatus } : {}),
-  };
+export const listInvoices = unstable_cache(
+  async (params: {
+    gymId: string;
+    memberId?: string;
+    status?: string;
+    page?: number;
+  }): Promise<{ items: InvoiceListItem[]; total: number; page: number; totalPages: number }> => {
+    const page = Math.max(1, params.page ?? 1);
+    const where = {
+      gymId: params.gymId,
+      ...(params.memberId ? { memberId: params.memberId } : {}),
+      ...(params.status ? { status: params.status as InvoiceStatus } : {}),
+    };
 
-  const [rows, total] = await Promise.all([
-    db.invoice.findMany({
-      where,
-      orderBy: { issuedAt: "desc" },
-      skip: (page - 1) * PAGE_SIZE,
-      take: PAGE_SIZE,
-      include: {
-        payments: {
-          where: { isReversal: false },
-          select: {
-            amount: true,
+    const [rows, total] = await Promise.all([
+      db.invoice.findMany({
+        where,
+        orderBy: { issuedAt: "desc" },
+        skip: (page - 1) * PAGE_SIZE,
+        take: PAGE_SIZE,
+        include: {
+          payments: {
+            where: { isReversal: false },
+            select: {
+              amount: true,
+            },
           },
         },
-      },
-    }),
-    db.invoice.count({ where }),
-  ]);
+      }),
+      db.invoice.count({ where }),
+    ]);
 
-  // Get member names separately
-  const memberIds = [...new Set(rows.map((r) => r.memberId))];
-  const members = await db.user.findMany({
-    where: { id: { in: memberIds } },
-    select: { id: true, name: true },
-  });
-  const memberMap = new Map(members.map((m) => [m.id, m.name]));
+    // Get member names separately
+    const memberIds = [...new Set(rows.map((r) => r.memberId))];
+    const members = await db.user.findMany({
+      where: { id: { in: memberIds } },
+      select: { id: true, name: true },
+    });
+    const memberMap = new Map(members.map((m) => [m.id, m.name]));
 
-  const items: InvoiceListItem[] = rows.map((row) => {
-    const paidAmount = row.payments.reduce((sum, p) => sum + Number(p.amount), 0);
-    return {
-      id: row.id,
-      invoiceNumber: row.invoiceNumber,
-      memberName: memberMap.get(row.memberId) ?? "Unknown",
-      total: Number(row.total),
-      status: row.status,
-      issuedAt: row.issuedAt,
-      dueDate: row.dueDate,
-      paidAmount,
-    };
-  });
+    const items: InvoiceListItem[] = rows.map((row) => {
+      const paidAmount = row.payments.reduce((sum, p) => sum + Number(p.amount), 0);
+      return {
+        id: row.id,
+        invoiceNumber: row.invoiceNumber,
+        memberName: memberMap.get(row.memberId) ?? "Unknown",
+        total: Number(row.total),
+        status: row.status,
+        issuedAt: row.issuedAt,
+        dueDate: row.dueDate,
+        paidAmount,
+      };
+    });
 
-  return { items, total, page, totalPages: Math.max(1, Math.ceil(total / PAGE_SIZE)) };
-}
+    return { items, total, page, totalPages: Math.max(1, Math.ceil(total / PAGE_SIZE)) };
+  },
+  ["invoices-list"],
+  { revalidate: 15 },
+);
 
 export type CollectInvoice = {
   id: string;

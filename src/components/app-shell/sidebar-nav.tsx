@@ -22,6 +22,12 @@ export function SidebarNav({ items }: { items: NavItem[] }) {
           <Link
             key={item.href}
             href={item.href}
+            // Prefetch the full route (RSC payload + JS) as soon as the link
+            // enters the viewport, not just on click. These pages are dynamic
+            // (session + DB-backed), so without this every sidebar click waits
+            // on a fresh server round-trip — the "URL changes but the page
+            // sits blank" experience on slow connections.
+            prefetch
             className={cn(
               "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
               active
