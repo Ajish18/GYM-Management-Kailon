@@ -99,18 +99,24 @@ profile).
 
 ---
 
-## 3. Email — Resend (optional to start)
+## 3. Email — Brevo (optional to start)
 
 Used for invite emails and password resets. Without this, invite links are
 just printed to the server log instead of emailed — fine for testing
 everything yourself, but you'll want this before real staff/members use it.
 
-1. Go to https://resend.com and sign up.
-2. **API Keys → Create API Key** → copy it → `RESEND_API_KEY`.
-3. For `EMAIL_FROM`, Resend gives you a free `onboarding@resend.dev` sender
-   that works immediately with no setup — use that to start. Later, you can
-   verify your own domain (e.g. `noreply@yourgym.com`) under **Domains** in
-   Resend and switch `EMAIL_FROM` to it.
+1. Go to https://brevo.com and sign up (free plan: 300 emails/day).
+2. Verify your sender: **Senders, Domains & Dedicated IPs → Senders → Add
+   sender** → enter your email (e.g. `kailongym@gmail.com`) → Brevo sends a
+   confirmation link → click it. No domain needed.
+3. **SMTP & API → API Keys → Generate new key (v3)** → copy it →
+   `BREVO_API_KEY`.
+4. Set `EMAIL_FROM` to the exact same address you verified as sender, e.g.
+   `Kailon <kailongym@gmail.com>` — Brevo rejects sends from an unverified
+   sender address.
+
+(Later, a custom domain can be added under **Senders & Domains** for a
+branded `noreply@yourgym.com` sender and better deliverability.)
 
 ---
 
@@ -141,7 +147,7 @@ or email silently broken in production even though everything works locally.
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase service_role key (server-only) |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | from section 2 |
-| `RESEND_API_KEY` / `EMAIL_FROM` | from section 3 |
+| `BREVO_API_KEY` / `EMAIL_FROM` | from section 3 |
 | `NEXT_PUBLIC_APP_URL` | `https://gym-kailon.vercel.app` — used to build invite/password-reset links |
 
 **Deployment mechanics:** the repo's `vercel-build` script runs
