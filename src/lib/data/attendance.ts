@@ -265,12 +265,11 @@ export type AttendanceDayCell = { date: string; sessions: number; totalMinutes: 
 /** Day-by-day attendance for the last `days` days (default ~12 weeks), for
  *  the heatmap-style calendar view. Date bucketing uses the server's local
  *  calendar day (consistent with the rest of this codebase's date handling,
- *  which doesn't yet thread through `gym.timezone`). */
-export async function getMemberAttendanceCalendar(
-  gymId: string,
-  memberId: string,
-  days = 84,
-): Promise<AttendanceDayCell[]> {
+ *  which doesn't yet thread through `gym.timezone`). Cached 30s — streak/
+ *  calendar only change on check-in/out, which already revalidates
+ *  /owner/attendance, /reception/attendance, /member, /member/attendance. */
+export const getMemberAttendanceCalendar = unstable_cache(
+  async (gymId: string, memberId: string, days = 84): Promise<AttendanceDayCell[]> => {
   const end = new Date();
   end.setHours(23, 59, 59, 999);
   const start = new Date(end);
@@ -300,7 +299,10 @@ export async function getMemberAttendanceCalendar(
     cells.push({ date: key, sessions: v?.sessions ?? 0, totalMinutes: v?.totalMinutes ?? 0 });
   }
   return cells;
-}
+  },
+  ["attendance-member-calendar"],
+  { revalidate: ATTENDANCE_REVALIDATE },
+);
 
 function dateKey(d: Date) {
   const local = new Date(d);
@@ -313,9 +315,13 @@ function dateKey(d: Date) {
 
 /** Scoped by gymId too (not just the memberId PK) as defense-in-depth against
  *  a caller accidentally passing a memberId from another gym. */
-export async function getMemberStreak(gymId: string, memberId: string) {
-  return db.memberStreak.findFirst({ where: { gymId, memberId } });
-}
+export const getMemberStreak = unstable_cache(
+  async (gymId: string, memberId: string) => {
+    return db.memberStreak.findFirst({ where: { gymId, memberId } });
+  },
+  ["attendance-member-streak"],
+  { revalidate: ATTENDANCE_REVALIDATE },
+);
 
 export type MemberBadgeItem = {
   id: string;
@@ -326,7 +332,8 @@ export type MemberBadgeItem = {
   awardedAt: Date;
 };
 
-export async function getMemberBadges(gymId: string, memberId: string): Promise<MemberBadgeItem[]> {
+export const getMemberBadges = unstable_cache(
+  async (gymId: string, memberId: string): Promise<MemberBadgeItem[]> => {
   const rows = await db.memberBadge.findMany({
     where: { gymId, memberId },
     orderBy: { awardedAt: "desc" },
@@ -340,7 +347,10 @@ export async function getMemberBadges(gymId: string, memberId: string): Promise<
     icon: r.badge.icon,
     awardedAt: r.awardedAt,
   }));
-}
+  },
+  ["attendance-member-badges"],
+  { revalidate: ATTENDANCE_REVALIDATE },
+);
 
 // ─────────────────────────────────────────────────────────────────────────
 // Leaderboard — gym-scoped, opt-in only, ranked by current streak
@@ -355,7 +365,8 @@ export type LeaderboardEntry = {
   rank: number;
 };
 
-export async function getLeaderboard(gymId: string, limit = 10): Promise<LeaderboardEntry[]> {
+export const getLeaderboard = unstable_cache(
+  async (gymId: string, limit = 10): Promise<LeaderboardEntry[]> => {
   const optedIn = await db.memberProfile.findMany({
     where: { gymId, leaderboardOptIn: true },
     select: { userId: true },
@@ -384,7 +395,10 @@ export async function getLeaderboard(gymId: string, limit = 10): Promise<Leaderb
     longestStreak: s.longestStreak,
     rank: i + 1,
   }));
-}
+  },
+  ["attendance-leaderboard"],
+  { revalidate: ATTENDANCE_REVALIDATE },
+);
 
 // ─────────────────────────────────────────────────────────────────────────
 // Vacation mode
@@ -401,7 +415,8 @@ export type VacationPeriodItem = {
   createdAt: Date;
 };
 
-export async function listPendingVacationRequests(gymId: string): Promise<VacationPeriodItem[]> {
+export const listPendingVacationRequests = unstable_cache(
+  async (gymId: string): Promise<VacationPeriodItem[]> => {
   const rows = await db.vacationModePeriod.findMany({
     where: { gymId, status: "PENDING" },
     orderBy: { createdAt: "asc" },
@@ -424,11 +439,18 @@ export async function listPendingVacationRequests(gymId: string): Promise<Vacati
     status: r.status,
     createdAt: r.createdAt,
   }));
-}
+  },
+  ["attendance-pending-vacations"],
+  { revalidate: ATTENDANCE_REVALIDATE },
+);
 
-export async function listMemberVacationPeriods(gymId: string, memberId: string) {
-  return db.vacationModePeriod.findMany({
-    where: { gymId, memberId },
-    orderBy: { startDate: "desc" },
-  });
-}
+export const listMemberVacationPeriods = unstable_cache(
+  async (gymId: string, memberId: string) => {
+    return db.vacationModePeriod.findMany({
+      where: { gymId, memberId },
+      orderBy: { startDate: "desc" },
+    });
+  },
+  ["attendance-member-vacations"],
+  { revalidate: ATTENDANCE_REVALIDATE },
+);

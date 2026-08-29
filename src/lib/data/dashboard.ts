@@ -97,21 +97,25 @@ export const getTrainerDashboardStats = unstable_cache(
   { revalidate: STATS_REVALIDATE },
 );
 
-// Not cached: the returned `membership` carries a Prisma `plan` whose
-// `price` is a Decimal — the data cache can't serialize that, and the member
-// dashboard is low-traffic anyway (3 parallel queries).
-export async function getMemberDashboardStats(memberId: string) {
-  const [streak, membership, unreadMessages] = await Promise.all([
-    db.memberStreak.findUnique({ where: { memberId } }),
-    db.memberMembership.findFirst({
-      where: { memberId, status: "ACTIVE" },
-      orderBy: { endDate: "desc" },
-      include: { plan: true },
-    }),
-    db.message.count({
-      where: { conversation: { memberId }, readAt: null, senderId: { not: memberId } },
-    }),
-  ]);
-  return { streak, membership, unreadMessages };
-}
+// Cached: member dashboard is lower traffic but still benefits from avoiding
+// round-trips on sidebar nav. The `plan.price` Decimal is excluded (page only
+// uses `plan.name`) so the cache can serialize the result.
+export const getMemberDashboardStats = unstable_cache(
+  async (memberId: string) => {
+    const [streak, membership, unreadMessages] = await Promise.all([
+      db.memberStreak.findUnique({ where: { memberId } }),
+      db.memberMembership.findFirst({
+        where: { memberId, status: "ACTIVE" },
+        orderBy: { endDate: "desc" },
+        include: { plan: { select: { id: true, name: true } } },
+      }),
+      db.message.count({
+        where: { conversation: { memberId }, readAt: null, senderId: { not: memberId } },
+      }),
+    ]);
+    return { streak, membership, unreadMessages };
+  },
+  ["dashboard-member"],
+  { revalidate: STATS_REVALIDATE },
+);
 

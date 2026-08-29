@@ -1,12 +1,43 @@
 import "server-only";
+import { unstable_cache } from "next/cache";
 import { db } from "@/lib/db";
+
+// Exercise/templates change infrequently (admin actions), so a 60s window
+// makes sidebar nav instant while keeping template edits visible quickly.
+const WORKOUTS_REVALIDATE = 60;
+
+// ─────────────────────────────────────────────────────────────────────────
+// Explicit types for workout history — used by client components.
+// These must be plain JSON-serializable types (no Prisma Decimals).
+// ─────────────────────────────────────────────────────────────────────────
+
+export type WorkoutLogSet = {
+  id: string;
+  setNumber: number;
+  actualReps: number | null;
+  actualWeight: number | null;
+  isPr: boolean;
+  exercise: {
+    id: string;
+    name: string;
+  };
+};
+
+export type WorkoutHistoryItem = {
+  id: string;
+  logDate: Date;
+  status: "COMPLETED" | "PARTIAL" | "SKIPPED";
+  notes: string | null;
+  sets: WorkoutLogSet[];
+};
 
 // ─────────────────────────────────────────────────────────────────────────
 // Exercise library — gym-scoped exercises plus any gym-null "global"/shared
 // library exercises are always visible together.
 // ─────────────────────────────────────────────────────────────────────────
 
-export async function listExercises(params: { gymId: string; search?: string; includeInactive?: boolean }) {
+export const listExercises = unstable_cache(
+  async (params: { gymId: string; search?: string; includeInactive?: boolean }) => {
   return db.exercise.findMany({
     where: {
       AND: [
@@ -24,16 +55,23 @@ export async function listExercises(params: { gymId: string; search?: string; in
     },
     orderBy: [{ muscleGroup: "asc" }, { name: "asc" }],
   });
-}
+  },
+  ["workouts-exercises"],
+  { revalidate: WORKOUTS_REVALIDATE },
+);
 
 /** Slim option list for template-builder exercise pickers. */
-export async function listActiveExercises(gymId: string) {
-  return db.exercise.findMany({
-    where: { OR: [{ gymId }, { gymId: null }], isActive: true },
-    orderBy: [{ muscleGroup: "asc" }, { name: "asc" }],
-    select: { id: true, name: true, muscleGroup: true },
-  });
-}
+export const listActiveExercises = unstable_cache(
+  async (gymId: string) => {
+    return db.exercise.findMany({
+      where: { OR: [{ gymId }, { gymId: null }], isActive: true },
+      orderBy: [{ muscleGroup: "asc" }, { name: "asc" }],
+      select: { id: true, name: true, muscleGroup: true },
+    });
+  },
+  ["workouts-active-exercises"],
+  { revalidate: WORKOUTS_REVALIDATE },
+);
 
 // ─────────────────────────────────────────────────────────────────────────
 // Workout templates
@@ -51,30 +89,42 @@ const templateInclude = {
   },
 };
 
-export async function listTemplates(gymId: string) {
-  return db.workoutTemplate.findMany({
-    where: { gymId },
-    include: templateInclude,
-    orderBy: { createdAt: "desc" },
-  });
-}
+export const listTemplates = unstable_cache(
+  async (gymId: string) => {
+    return db.workoutTemplate.findMany({
+      where: { gymId },
+      include: templateInclude,
+      orderBy: { createdAt: "desc" },
+    });
+  },
+  ["workouts-templates"],
+  { revalidate: WORKOUTS_REVALIDATE },
+);
 export type TemplateWithDays = Awaited<ReturnType<typeof listTemplates>>[number];
 
-export async function getTemplateWithDays(templateId: string, gymId: string) {
-  return db.workoutTemplate.findFirst({
-    where: { id: templateId, gymId },
-    include: templateInclude,
-  });
-}
+export const getTemplateWithDays = unstable_cache(
+  async (templateId: string, gymId: string) => {
+    return db.workoutTemplate.findFirst({
+      where: { id: templateId, gymId },
+      include: templateInclude,
+    });
+  },
+  ["workouts-template-with-days"],
+  { revalidate: WORKOUTS_REVALIDATE },
+);
 
 /** Slim option list for the assign-plan dialog. */
-export async function listActiveTemplates(gymId: string) {
-  return db.workoutTemplate.findMany({
-    where: { gymId, isActive: true },
-    select: { id: true, name: true },
-    orderBy: { name: "asc" },
-  });
-}
+export const listActiveTemplates = unstable_cache(
+  async (gymId: string) => {
+    return db.workoutTemplate.findMany({
+      where: { gymId, isActive: true },
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    });
+  },
+  ["workouts-active-templates"],
+  { revalidate: WORKOUTS_REVALIDATE },
+);
 
 // ─────────────────────────────────────────────────────────────────────────
 // Member pickers / workout plans
@@ -106,31 +156,35 @@ export type WorkoutPlanListItem = {
   assignedByName: string;
 };
 
-export async function listWorkoutPlans(params: { gymId: string; trainerId?: string }): Promise<WorkoutPlanListItem[]> {
-  const members = await listAssignableMembers(params);
-  const memberIds = members.map((m) => m.id);
-  if (memberIds.length === 0) return [];
+export const listWorkoutPlans = unstable_cache(
+  async (params: { gymId: string; trainerId?: string }): Promise<WorkoutPlanListItem[]> => {
+    const members = await listAssignableMembers(params);
+    const memberIds = members.map((m) => m.id);
+    if (memberIds.length === 0) return [];
 
-  const plans = await db.workoutPlan.findMany({
-    where: { gymId: params.gymId, memberId: { in: memberIds } },
-    include: {
-      template: { select: { name: true } },
-      assignedBy: { select: { name: true } },
-    },
-    orderBy: { createdAt: "desc" },
-  });
+    const plans = await db.workoutPlan.findMany({
+      where: { gymId: params.gymId, memberId: { in: memberIds } },
+      include: {
+        template: { select: { name: true } },
+        assignedBy: { select: { name: true } },
+      },
+      orderBy: { createdAt: "desc" },
+    });
 
-  const nameById = new Map(members.map((m) => [m.id, m.name]));
-  return plans.map((plan) => ({
-    id: plan.id,
-    memberId: plan.memberId,
-    memberName: nameById.get(plan.memberId) ?? "Unknown member",
-    templateName: plan.template?.name ?? "—",
-    status: plan.status,
-    startDate: plan.startDate,
-    assignedByName: plan.assignedBy.name,
-  }));
-}
+    const nameById = new Map(members.map((m) => [m.id, m.name]));
+    return plans.map((plan) => ({
+      id: plan.id,
+      memberId: plan.memberId,
+      memberName: nameById.get(plan.memberId) ?? "Unknown member",
+      templateName: plan.template?.name ?? "—",
+      status: plan.status,
+      startDate: plan.startDate,
+      assignedByName: plan.assignedBy.name,
+    }));
+  },
+  ["workouts-plans"],
+  { revalidate: WORKOUTS_REVALIDATE },
+);
 
 // ─────────────────────────────────────────────────────────────────────────
 // Member "Today's Workout" view
@@ -170,10 +224,14 @@ function serializeActivePlan(plan: NonNullable<ActivePlanForMember>): NonNullabl
   return plan;
 }
 
-export async function getActivePlanForMember(memberId: string) {
-  const plan = await fetchActivePlan(memberId);
-  return plan ? serializeActivePlan(plan) : null;
-}
+export const getActivePlanForMember = unstable_cache(
+  async (memberId: string) => {
+    const plan = await fetchActivePlan(memberId);
+    return plan ? serializeActivePlan(plan) : null;
+  },
+  ["workouts-active-plan"],
+  { revalidate: 30 },
+);
 
 /**
  * Design decision — "which template day is today?"
@@ -226,21 +284,67 @@ export async function getTodayLogForPlan(planId: string, memberId: string, logDa
   return log;
 }
 
-export async function getWorkoutHistory(memberId: string, gymId: string, limit = 20) {
-  return db.workoutLog.findMany({
-    where: { memberId, gymId },
-    orderBy: { logDate: "desc" },
-    take: limit,
-    include: { sets: { include: { exercise: { select: { name: true } } } } },
-  });
-}
-export type WorkoutHistoryItem = Awaited<ReturnType<typeof getWorkoutHistory>>[number];
+type RawWorkoutLog = {
+  id: string;
+  logDate: Date;
+  status: "COMPLETED" | "PARTIAL" | "SKIPPED";
+  notes: string | null;
+  sets: {
+    id: string;
+    setNumber: number;
+    actualReps: number | null;
+    actualWeight: { toNumber: () => number } | null;
+    isPr: boolean;
+    exercise: {
+      id: string;
+      name: string;
+    };
+  }[];
+};
 
-export async function getPersonalRecords(memberId: string, gymId: string) {
-  return db.personalRecord.findMany({
-    where: { memberId, gymId },
-    include: { exercise: { select: { name: true } } },
-    orderBy: { achievedAt: "desc" },
-  });
+function serializeLogSets(log: RawWorkoutLog): WorkoutHistoryItem {
+  return {
+    id: log.id,
+    logDate: log.logDate,
+    status: log.status,
+    notes: log.notes,
+    sets: log.sets?.map((s) => ({
+      id: s.id,
+      setNumber: s.setNumber,
+      actualReps: s.actualReps,
+      actualWeight: s.actualWeight != null ? Number(s.actualWeight) : null,
+      isPr: s.isPr,
+      exercise: {
+        id: s.exercise.id,
+        name: s.exercise.name,
+      },
+    })) ?? [],
+  };
 }
+
+export const getWorkoutHistory = unstable_cache(
+  async (memberId: string, gymId: string, limit = 20): Promise<WorkoutHistoryItem[]> => {
+    const logs = await db.workoutLog.findMany({
+      where: { memberId, gymId },
+      orderBy: { logDate: "desc" },
+      take: limit,
+      include: { sets: { include: { exercise: { select: { id: true, name: true } } } } },
+    });
+    return logs.map(serializeLogSets);
+  },
+  ["workouts-history"],
+  { revalidate: 60 },
+);
+
+export const getPersonalRecords = unstable_cache(
+  async (memberId: string, gymId: string) => {
+    return db.personalRecord.findMany({
+      where: { memberId, gymId },
+      include: { exercise: { select: { name: true } } },
+      orderBy: { achievedAt: "desc" },
+    });
+  },
+  ["workouts-personal-records"],
+  { revalidate: 60 },
+);
 export type PersonalRecordItem = Awaited<ReturnType<typeof getPersonalRecords>>[number];

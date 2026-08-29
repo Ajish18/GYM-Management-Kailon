@@ -1,6 +1,13 @@
 import "server-only";
+import { unstable_cache } from "next/cache";
 import type { MessageType } from "@prisma/client";
 import { db } from "@/lib/db";
+
+// Short cache for messaging — the polling UI (6s) already hits React Query's
+// staleTime (60s), but the server-rendered initial loads benefit from a small
+// data-cache window so repeat sidebar navigations don't re-query the remote DB.
+// Actions revalidate /trainer/messages and /member/chat on send/read.
+const MESSAGING_REVALIDATE = 10; // seconds
 
 export type ConversationSummary = {
   memberId: string;
@@ -48,10 +55,8 @@ function previewFor(message: { type: MessageType; body: string | null }): string
  *  the old trainer. The old `Conversation` row itself is left untouched
  *  (nothing to delete/archive — see the send-time guard in
  *  messaging.actions.ts for how re-sends into a stale pairing are blocked). */
-export async function getTrainerConversations(
-  trainerId: string,
-  gymId: string,
-): Promise<ConversationSummary[]> {
+export const getTrainerConversations = unstable_cache(
+  async (trainerId: string, gymId: string): Promise<ConversationSummary[]> => {
   const members = await db.memberProfile.findMany({
     where: { gymId, assignedTrainerId: trainerId },
     include: { user: { select: { id: true, name: true, image: true } } },
@@ -97,15 +102,19 @@ export async function getTrainerConversations(
       if (at !== bt) return bt - at;
       return a.memberName.localeCompare(b.memberName);
     });
-}
+  },
+  ["messaging-trainer-conversations"],
+  { revalidate: MESSAGING_REVALIDATE },
+);
 
 /** Member's single conversation with their *current* assigned trainer — no
  *  list needed, and (unlike the trainer side) a member never sees any past
  *  trainer's thread once reassigned. */
-export async function getMemberConversation(
-  memberId: string,
-  gymId: string,
-): Promise<{ trainerId: string; trainerName: string; trainerImage: string | null } | null> {
+export const getMemberConversation = unstable_cache(
+  async (
+    memberId: string,
+    gymId: string,
+  ): Promise<{ trainerId: string; trainerName: string; trainerImage: string | null } | null> => {
   const profile = await db.memberProfile.findUnique({
     where: { userId: memberId },
     select: { assignedTrainerId: true },
@@ -119,12 +128,13 @@ export async function getMemberConversation(
   if (!trainer) return null;
 
   return { trainerId: trainer.id, trainerName: trainer.name, trainerImage: trainer.image };
-}
+  },
+  ["messaging-member-conversation"],
+  { revalidate: MESSAGING_REVALIDATE },
+);
 
-export async function getConversationMessages(
-  conversationId: string,
-  viewerId: string,
-): Promise<ThreadMessage[]> {
+export const getConversationMessages = unstable_cache(
+  async (conversationId: string, viewerId: string): Promise<ThreadMessage[]> => {
   const messages = await db.message.findMany({
     where: { conversationId },
     orderBy: { createdAt: "asc" },
@@ -142,14 +152,18 @@ export async function getConversationMessages(
     readAt: m.readAt ? m.readAt.toISOString() : null,
     createdAt: m.createdAt.toISOString(),
   }));
-}
+  },
+  ["messaging-conversation-messages"],
+  { revalidate: MESSAGING_REVALIDATE },
+);
 
 /** Unread count across every conversation this user is part of, regardless
  *  of whether they're the trainer or member side of it — a role-agnostic
  *  equivalent of the per-role inline counts already computed in
  *  lib/data/dashboard.ts (getTrainerDashboardStats/getMemberDashboardStats),
  *  kept here as a reusable building block rather than touching that file. */
-export async function getUnreadMessageCount(userId: string): Promise<number> {
+export const getUnreadMessageCount = unstable_cache(
+  async (userId: string): Promise<number> => {
   return db.message.count({
     where: {
       conversation: { OR: [{ trainerId: userId }, { memberId: userId }] },
@@ -157,4 +171,7 @@ export async function getUnreadMessageCount(userId: string): Promise<number> {
       senderId: { not: userId },
     },
   });
-}
+  },
+  ["messaging-unread-count"],
+  { revalidate: MESSAGING_REVALIDATE },
+);

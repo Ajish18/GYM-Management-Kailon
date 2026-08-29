@@ -56,9 +56,13 @@ export const getRecentNotifications = unstable_cache(
   { revalidate: 15 },
 );
 
-export async function getUnreadNotificationCount(userId: string): Promise<number> {
-  return db.notification.count({ where: { userId, readAt: null } });
-}
+export const getUnreadNotificationCount = unstable_cache(
+  async (userId: string): Promise<number> => {
+    return db.notification.count({ where: { userId, readAt: null } });
+  },
+  ["notifications-unread-count"],
+  { revalidate: 15 },
+);
 
 export const NOTIFICATION_HISTORY_PAGE_SIZE = 20;
 
@@ -80,16 +84,15 @@ export type NotificationHistoryParams = {
  *  views scope by userId (VO per docs/09 §10.15); the owner's gym-wide view
  *  scopes by gymId and may be narrowed to a member. `search` does a
  *  case-insensitive contains on title/body; `type` and `unreadOnly` are
- *  exact filters. */
-export async function getNotificationHistory(
-  params: NotificationHistoryParams,
-): Promise<{
-  items: NotificationListItem[];
-  total: number;
-  page: number;
-  totalPages: number;
-  unreadCount: number;
-}> {
+ *  exact filters. Cached 15s — notification actions revalidate relevant paths. */
+export const getNotificationHistory = unstable_cache(
+  async (params: NotificationHistoryParams): Promise<{
+    items: NotificationListItem[];
+    total: number;
+    page: number;
+    totalPages: number;
+    unreadCount: number;
+  }> => {
   const page = Math.max(1, params.page ?? 1);
   const pageSize = Math.min(50, Math.max(1, params.pageSize ?? NOTIFICATION_HISTORY_PAGE_SIZE));
 
@@ -167,14 +170,21 @@ export async function getNotificationHistory(
     totalPages: Math.max(1, Math.ceil(total / pageSize)),
     unreadCount,
   };
-}
+  },
+  ["notifications-history"],
+  { revalidate: 15 },
+);
 
 export type PreferenceMap = Partial<Record<(typeof TOGGLEABLE_NOTIFICATION_TYPES)[number], boolean>>;
 
 /** All toggleable types default to "on" until the user explicitly opts out
  *  — NotificationPreference.preferences is free-form JSON with no row
  *  guaranteed to exist yet for a given user. */
-export async function getNotificationPreferences(userId: string): Promise<PreferenceMap> {
-  const row = await db.notificationPreference.findUnique({ where: { userId } });
-  return (row?.preferences as PreferenceMap | undefined) ?? {};
-}
+export const getNotificationPreferences = unstable_cache(
+  async (userId: string): Promise<PreferenceMap> => {
+    const row = await db.notificationPreference.findUnique({ where: { userId } });
+    return (row?.preferences as PreferenceMap | undefined) ?? {};
+  },
+  ["notifications-preferences"],
+  { revalidate: 60 },
+);

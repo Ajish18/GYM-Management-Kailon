@@ -165,11 +165,10 @@ export type CollectInvoice = {
 
 /** One invoice, scoped to a gym, with everything the "Collect payment" page
  *  needs: the member, the plan line-item, and its non-reversal payment
- *  history (used to derive paid/remaining and render the receipt summary). */
-export async function getInvoiceForCollection(
-  gymId: string,
-  invoiceId: string,
-): Promise<CollectInvoice | null> {
+ *  history (used to derive paid/remaining and render the receipt summary).
+ *  Cached 15s — payments actions revalidate /owner/payments, /reception/payments. */
+export const getInvoiceForCollection = unstable_cache(
+  async (gymId: string, invoiceId: string): Promise<CollectInvoice | null> => {
   const invoice = await db.invoice.findFirst({
     where: { id: invoiceId, gymId },
     include: {
@@ -213,9 +212,33 @@ export async function getInvoiceForCollection(
       paidAt: p.paidAt,
     })),
   };
-}
+  },
+  ["payments-invoice-collection"],
+  { revalidate: 15 },
+);
 
-export async function getMemberPaymentSummary(memberId: string, gymId: string) {
+export type MemberInvoiceFlat = {
+  id: string;
+  invoiceNumber: string;
+  total: number;
+  status: string;
+  issuedAt: Date;
+  dueDate: Date | null;
+  payments: { amount: number; paidAt: Date; method: string }[];
+};
+
+export type MemberPaymentFlat = {
+  id: string;
+  amount: number;
+  method: string;
+  paidAt: Date;
+  invoiceNumber: string;
+  invoiceTotal: number;
+  invoiceStatus: string;
+};
+
+export const getMemberPaymentSummary = unstable_cache(
+  async (memberId: string, gymId: string) => {
   const [invoices, payments] = await Promise.all([
     db.invoice.findMany({
       where: { gymId, memberId },
@@ -243,14 +266,42 @@ export async function getMemberPaymentSummary(memberId: string, gymId: string) {
     }),
   ]);
 
-  const totalPaid = payments.reduce((sum: number, p) => sum + Number(p.amount), 0);
-  const totalDue = invoices.reduce((sum: number, inv) => sum + Number(inv.total), 0);
+  const flatInvoices: MemberInvoiceFlat[] = invoices.map((inv) => ({
+    id: inv.id,
+    invoiceNumber: inv.invoiceNumber,
+    total: Number(inv.total),
+    status: inv.status,
+    issuedAt: inv.issuedAt,
+    dueDate: inv.dueDate,
+    payments: inv.payments.map((p) => ({
+      amount: Number(p.amount),
+      paidAt: p.paidAt,
+      method: p.method,
+    })),
+  }));
+
+  const flatPayments: MemberPaymentFlat[] = payments.map((p) => ({
+    id: p.id,
+    amount: Number(p.amount),
+    method: p.method,
+    paidAt: p.paidAt,
+    invoiceNumber: p.invoice.invoiceNumber,
+    invoiceTotal: Number(p.invoice.total),
+    invoiceStatus: p.invoice.status,
+  }));
+
+  const totalPaid = flatPayments.reduce((sum: number, p) => sum + p.amount, 0);
+  const totalDue = flatInvoices.reduce((sum: number, inv) => sum + inv.total, 0);
   const outstanding = Math.max(0, totalDue - totalPaid);
 
-  return { invoices, payments, totalPaid, totalDue, outstanding };
-}
+  return { invoices: flatInvoices, payments: flatPayments, totalPaid, totalDue, outstanding };
+  },
+  ["payments-member-summary"],
+  { revalidate: 15 },
+);
 
-export async function getRecentPayments(gymId: string, limit = 10) {
+export const getRecentPayments = unstable_cache(
+  async (gymId: string, limit = 10) => {
   const payments = await db.payment.findMany({
     where: { gymId, isReversal: false },
     orderBy: { paidAt: "desc" },
@@ -283,7 +334,10 @@ export async function getRecentPayments(gymId: string, limit = 10) {
       },
     },
   }));
-}
+  },
+  ["payments-recent"],
+  { revalidate: 15 },
+);
 
 export type UnpaidInvoiceRow = {
   id: string;
@@ -296,7 +350,8 @@ export type UnpaidInvoiceRow = {
   paidAmount: number;
 };
 
-export async function listUnpaidInvoices(gymId: string): Promise<UnpaidInvoiceRow[]> {
+export const listUnpaidInvoices = unstable_cache(
+  async (gymId: string): Promise<UnpaidInvoiceRow[]> => {
   const invoices = await db.invoice.findMany({
     where: {
       gymId,
@@ -333,4 +388,7 @@ export async function listUnpaidInvoices(gymId: string): Promise<UnpaidInvoiceRo
       paidAmount,
     };
   });
-}
+  },
+  ["payments-unpaid-invoices"],
+  { revalidate: 15 },
+);

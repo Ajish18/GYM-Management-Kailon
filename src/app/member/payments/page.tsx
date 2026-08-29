@@ -112,17 +112,17 @@ export default async function MemberPaymentsPage() {
                     <TableBody>
                       {unpaidInvoices.map((invoice) => {
                         const paid = invoice.payments.reduce(
-                          (sum, p) => sum + Number(p.amount),
+                          (sum, p) => sum + p.amount,
                           0
                         );
-                        const isPaid = paid >= Number(invoice.total);
+                        const isPaid = paid >= invoice.total;
                         return (
                           <TableRow key={invoice.id}>
                             <TableCell className="font-medium">
                               {invoice.invoiceNumber}
                             </TableCell>
                             <TableCell className="font-medium">
-                              {formatCurrency(Number(invoice.total))}
+                              {formatCurrency(invoice.total)}
                             </TableCell>
                             <TableCell>{formatCurrency(paid)}</TableCell>
                             <TableCell>
@@ -188,16 +188,16 @@ export default async function MemberPaymentsPage() {
                             {new Date(payment.paidAt).toLocaleDateString()}
                           </TableCell>
                           <TableCell className="font-medium">
-                            {payment.invoice.invoiceNumber}
+                            {payment.invoiceNumber}
                           </TableCell>
                           <TableCell className="font-medium">
-                            {formatCurrency(Number(payment.amount))}
+                            {formatCurrency(payment.amount)}
                           </TableCell>
                           <TableCell>
                             <Badge variant="secondary">{payment.method}</Badge>
                           </TableCell>
                           <TableCell>
-                            {payment.invoice.status === "PAID" ? (
+                            {payment.invoiceStatus === "PAID" ? (
                               <Badge variant="default">
                                 <CheckCircle className="mr-1 h-3 w-3" />
                                 Paid
@@ -251,7 +251,7 @@ export default async function MemberPaymentsPage() {
                               {invoice.invoiceNumber}
                             </TableCell>
                             <TableCell className="font-medium">
-                              {formatCurrency(Number(invoice.total))}
+                              {formatCurrency(invoice.total)}
                             </TableCell>
                             <TableCell>
                               {new Date(invoice.issuedAt).toLocaleDateString()}
