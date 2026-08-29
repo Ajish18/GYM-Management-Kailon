@@ -7,6 +7,7 @@ import {
   Dumbbell,
   Flame,
   LineChart,
+  Mail,
   MessageSquareText,
   Salad,
   Wallet,
@@ -148,6 +149,13 @@ export default function LandingPage() {
       <footer className="mx-auto w-full max-w-6xl px-6 py-8 text-sm text-muted-foreground">
         <div className="flex flex-col items-center justify-between gap-4 border-t pt-8 sm:flex-row">
           <Logo />
+          <a
+            href="mailto:kailongym@gmail.com"
+            className="inline-flex items-center gap-1.5 transition-colors hover:text-primary"
+          >
+            <Mail className="h-4 w-4 text-primary" />
+            Contact us: kailongym@gmail.com
+          </a>
           <p>© {new Date().getFullYear()} Kailon. All rights reserved.</p>
         </div>
       </footer>
