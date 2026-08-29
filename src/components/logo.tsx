@@ -1,18 +1,17 @@
 import Image from "next/image";
 import { cn } from "@/lib/utils";
 
-export function Logo({ className, iconOnly }: { className?: string; iconOnly?: boolean }) {
+/** Full "kailon" wordmark + dotted-dumbbell glyph, transparent background.
+ *  Works on light and dark surfaces. */
+export function Logo({ className }: { className?: string }) {
   return (
-    <span className={cn("inline-flex items-center gap-2 font-semibold tracking-tight", className)}>
-      <Image
-        src="/logo.png"
-        alt="Kailon logo"
-        width={32}
-        height={32}
-        className="h-8 w-8"
-        priority
-      />
-      {!iconOnly && <span className="text-lg">Kailon</span>}
-    </span>
+    <Image
+      src="/kailon-logo.png"
+      alt="Kailon"
+      width={96}
+      height={32}
+      priority
+      className={cn("h-7 w-auto", className)}
+    />
   );
 }
