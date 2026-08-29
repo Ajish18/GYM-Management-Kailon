@@ -41,6 +41,7 @@ export const NAV_CONFIG = {
     { href: "/owner/trainer-workload", label: "Trainer Workload", icon: LineChart },
     { href: "/owner/memberships", label: "Membership Plans", icon: CreditCard },
     { href: "/owner/attendance", label: "Attendance", icon: CalendarCheck },
+    { href: "/owner/qr-checkin", label: "QR Check-in", icon: ScanLine },
     { href: "/owner/workouts", label: "Workouts", icon: Dumbbell },
     { href: "/owner/diet", label: "Diet Plans", icon: Salad },
     { href: "/owner/expenses", label: "Expenses", icon: Receipt },
